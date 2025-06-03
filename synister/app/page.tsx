@@ -185,10 +185,12 @@ export default function Home() {
   };
 
   // Scroll on new message
-  useEffect(() => {
-    if (currentSession) scrollToBottom();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSession?.messages]);
+// Save sessions to localStorage on change
+useEffect(() => {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("synister-chat-sessions-v2", JSON.stringify(sessions));
+  }
+}, [sessions]);
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
