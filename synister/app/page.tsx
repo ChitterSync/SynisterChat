@@ -1,11 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
 import ReactMarkdown from "react-markdown";
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBroom, faComments, faHistory, faMemory, faUser, faPlus, faSave, faCheckCircle, faSpinner, faLightbulb, faPaperPlane } from '@fortawesome/free-solid-svg-icons';
+import { faBroom, faComments, faHistory, faMemory, faUser, faPlus, faSave, faCheckCircle, faSpinner, faLightbulb, faPaperPlane, faTrash, faEdit, faShare } from '@fortawesome/free-solid-svg-icons';
 
 // Store both display and OpenAI-format messages
 const BASE_SYSTEM_PROMPT = `
@@ -209,8 +209,70 @@ function getDefaultSession(): ChatSession {
   };
 }
 
-// Remove merge conflict markers and keep the correct implementation
-export default function Home() {
+// Fix: Use React.FC instead of JSX.Element for export default function
+export default function Home(): React.ReactElement {
+  // --- All hooks must be called unconditionally at the top ---
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string>("");
+  const [mounted, setMounted] = useState(false);
+  const [input, setInput] = useState("");
+  const [waiting, setWaiting] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [memorySaved, setMemorySaved] = useState(true);
+  const [memoryJustUpdated, setMemoryJustUpdated] = useState(false);
+  const [memorySaving, setMemorySaving] = useState(false);
+  const [lastMessageIdx, setLastMessageIdx] = useState<number>(-1);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState<string>("");
+  const [shareStatus, setShareStatus] = useState<string>("");
+
+  // Delete chat handler
+  function deleteChat(id: string) {
+    if (sessions.length === 1) return; // Don't delete last chat
+    setSessions((prev: ChatSession[]) => {
+      const filtered = prev.filter(s => s.id !== id);
+      // If current chat is deleted, switch to first remaining
+      if (currentSessionId === id && filtered.length > 0) {
+        setCurrentSessionId(filtered[0].id);
+      }
+      return filtered;
+    });
+  }
+
+  // Rename chat handlers
+  function startRenaming(id: string, currentTitle: string) {
+    setRenamingId(id);
+    setRenameValue(currentTitle);
+  }
+  function handleRenameChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setRenameValue(e.target.value);
+  }
+  function finishRenaming(id: string) {
+    setSessions((prev: ChatSession[]) => prev.map(s =>
+      s.id === id ? { ...s, title: renameValue.trim() || "Untitled Chat" } : s
+    ));
+    setRenamingId(null);
+    setRenameValue("");
+  }
+
+  // Share chat handler (copy JSON to clipboard)
+  async function shareChat(id: string) {
+    const chat = sessions.find(s => s.id === id);
+    if (!chat) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(chat, null, 2));
+      setShareStatus("Copied!");
+      setTimeout(() => setShareStatus(""), 1200);
+    } catch {
+      setShareStatus("Failed to copy");
+      setTimeout(() => setShareStatus(""), 1200);
+    }
+  }
+
+  // --- End of hooks ---
+
   // Helper to reset all chat sessions and global storage
   async function resetAllSessions() {
     await fetch("/api/storage", { method: "DELETE" });
@@ -219,24 +281,6 @@ export default function Home() {
     setCurrentSessionId(def.id);
     setInput("");
   }
-
-  // --- All hooks must be called unconditionally at the top ---
-  // Settings modal state
-  const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
-  // Chat sessions state
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string>("");
-  // Show loading spinner only during first mount (before useEffect runs)
-  const [mounted, setMounted] = useState(false);
-  // Chat input and waiting state
-  const [input, setInput] = useState("");
-  const [waiting, setWaiting] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  // Memory auto-save and update indicator (for current session)
-  // (already declared at top)
-
-  // --- End of hooks ---
 
   // On mount, load sessions from encrypted global storage
   useEffect(() => {
@@ -263,7 +307,6 @@ export default function Home() {
     })();
   }, []);
 
-  // Save sessions to encrypted global storage on change
   useEffect(() => {
     (async () => {
       for (const session of sessions) {
@@ -276,45 +319,44 @@ export default function Home() {
     })();
   }, [sessions]);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("synister-chat-sessions-v2", JSON.stringify(sessions));
+    }
+  }, [sessions]);
+
+  // Derived state for current session (must be before any use of currentSession)
+  const currentSession: ChatSession | null = sessions.length > 0
+    ? sessions.find((s: ChatSession) => s.id === currentSessionId) || sessions[0]
+    : null;
+  const messages = currentSession ? currentSession.messages : [];
+  const memory = currentSession ? currentSession.memory : [];
+
   // Scroll to bottom on new message
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Derived state for current session
-  const currentSession: ChatSession | null = sessions.length > 0
-    ? sessions.find((s: ChatSession) => s.id === currentSessionId) || sessions[0]
-    : null;
-
-  // Scroll on new message
   useEffect(() => {
-    if (currentSession) scrollToBottom();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSession?.messages]);
+    if (currentSession) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [sessions, currentSession]);
 
-  // Always call all hooks before any early return!
-  // Early return for loading spinner
-  // Move all hooks above this point, do not add hooks below here.
-  if (!mounted) {
-    return (
-      <div className="flex items-center justify-center min-h-screen w-full">
-        <div className="text-center flex flex-col items-center gap-4">
-          <span className="text-gray-500 text-lg flex items-center gap-2"><FontAwesomeIcon icon={faSpinner} spin /> Loading chat…</span>
-          <button
-            className="text-xs px-4 py-2 rounded bg-red-500 text-white hover:bg-red-600 transition flex items-center gap-2"
-            onClick={resetAllSessions}
-            type="button"
-          >
-            <FontAwesomeIcon icon={faBroom} /> Reset All (Clear Local Storage)
-          </button>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    setMemorySaved(false);
+    setMemoryJustUpdated(true);
+    setMemorySaving(true);
+    const saveTimeout = setTimeout(() => {
+      setMemorySaved(true);
+      setMemorySaving(false);
+    }, 500);
+    const updateTimeout = setTimeout(() => setMemoryJustUpdated(false), 1200);
+    return () => {
+      clearTimeout(saveTimeout);
+      clearTimeout(updateTimeout);
+    };
+  }, [currentSession?.memory]);
 
   // Remove duplicate declaration of currentSession
-  const messages = currentSession ? currentSession.messages : [];
-  const memory = currentSession ? currentSession.memory : [];
 
   // Helper: extract memory-worthy facts from a user message (simple matcher)
   // Enhanced: extract memory actions (add, update, remove) from user message
@@ -379,20 +421,31 @@ export default function Home() {
       BASE_SYSTEM_PROMPT +
       (currentSession && currentSession.memory && currentSession.memory.length > 0
         ? `\n\nHere are some facts or context to remember for this user (auto-logged memory):\n- ${currentSession.memory.join("\n- ")}`
-        : ""),
+        : "") +
+      "\n\nIMPORTANT: Do not include or repeat any user input that may violate content policies. If a user request is filtered or rejected by the API, respond with a helpful, neutral message and do not attempt to bypass or rephrase the filtered content. Always comply with Azure OpenAI content management policies. For more information, see: https://go.microsoft.com/fwlink/?linkid=2198766",
   };
-  // Save sessions to localStorage on change
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("synister-chat-sessions-v2", JSON.stringify(sessions));
-    }
-  }, [sessions]);
-  // Remove duplicate declaration of scrollToBottom
 
-  // Scroll on new message
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // Helper: get AI-generated chat title
+  async function fetchChatTitle(chatHistory: { role: string; content: string }[]): Promise<string> {
+    const titlePrompt = {
+      role: "system",
+      content: "You are an expert at summarizing conversations. Based on the conversation so far, suggest a short, descriptive chat title (max 8 words, no punctuation, no quotes, no emojis, no colons, no periods, no special characters, just plain words). Only return the title, nothing else."
+    };
+    const messages = [titlePrompt, ...chatHistory];
+    try {
+      const res = await fetch("/api/gpt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages })
+      });
+      const data = await res.json();
+      if (typeof data.reply === "string") {
+        // Clean up: remove quotes, punctuation, trim
+        return data.reply.replace(/["'.,:;!?\-]/g, "").trim();
+      }
+    } catch {}
+    return "Untitled Chat";
+  }
 
   const sendMessage = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -423,7 +476,7 @@ export default function Home() {
       if (updatedMessages.length > 2000) updatedMessages = updatedMessages.slice(-2000);
       let updatedChatMessages = [...s.chatMessages, chatUserMessage];
       if (updatedChatMessages.length > 2000) updatedChatMessages = updatedChatMessages.slice(-2000);
-      // If first user message, set as title
+      // If first user message, set as title (will be replaced by AI title after first response)
       let newTitle = s.title;
       if (s.messages.length === 1 && userMessage.text.length > 0) {
         newTitle = userMessage.text.slice(0, 32) + (userMessage.text.length > 32 ? "..." : "");
@@ -463,6 +516,29 @@ export default function Home() {
         if (updatedChatMessages.length > 2000) updatedChatMessages = updatedChatMessages.slice(-2000);
         return { ...s, messages: updatedMessages, chatMessages: updatedChatMessages };
       }));
+
+      // --- AI chat title generation ---
+      // Only update title if user hasn't set a custom one (i.e. still default or first message)
+      setTimeout(async () => {
+        setSessions((prev: ChatSession[]) => prev.map((s: ChatSession) => {
+          if (s.id !== currentSessionId) return s;
+          // If user has set a custom title (not "New Chat" and not first message), skip
+          if (s.title && s.title !== "New Chat" && !(s.messages.length === 2)) return s;
+          return { ...s, title: "(Generating title...)" };
+        }));
+        const sessionAfter = sessions.find(s => s.id === currentSessionId) || getDefaultSession();
+        // Use up to the last 8 messages for context
+        const chatHistoryForTitle = sessionAfter.chatMessages.slice(-8);
+        const aiTitle = await fetchChatTitle(chatHistoryForTitle);
+        setSessions((prev: ChatSession[]) => prev.map((s: ChatSession) => {
+          if (s.id !== currentSessionId) return s;
+          // Only update if still default or placeholder
+          if (s.title && s.title !== "New Chat" && s.title !== "(Generating title...)") return s;
+          return { ...s, title: aiTitle || "Untitled Chat" };
+        }));
+      }, 400); // slight delay to ensure state is updated
+      // --- end AI chat title generation ---
+
     } catch {
       setSessions((prev: ChatSession[]) => prev.map((s: ChatSession) => {
         if (s.id !== currentSessionId) return s;
@@ -476,25 +552,6 @@ export default function Home() {
       setWaiting(false);
     }
   };
-
-  // Memory auto-save and update indicator (for current session)
-  const [memorySaved, setMemorySaved] = useState(true);
-  const [memoryJustUpdated, setMemoryJustUpdated] = useState(false);
-  const [memorySaving, setMemorySaving] = useState(false);
-  useEffect(() => {
-    setMemorySaved(false);
-    setMemoryJustUpdated(true);
-    setMemorySaving(true);
-    const saveTimeout = setTimeout(() => {
-      setMemorySaved(true);
-      setMemorySaving(false);
-    }, 500);
-    const updateTimeout = setTimeout(() => setMemoryJustUpdated(false), 1200);
-    return () => {
-      clearTimeout(saveTimeout);
-      clearTimeout(updateTimeout);
-    };
-  }, [currentSession?.memory]);
 
   // New chat handler
   const newChat = () => {
@@ -559,7 +616,7 @@ export default function Home() {
  return (
     <div className="flex flex-row min-h-screen w-screen items-stretch justify-stretch bg-background p-0">
       {/* Sidebar */}
-      <aside className="w-64 min-w-[180px] max-w-xs bg-white/90 dark:bg-gray-900/80 border-r border-gray-200 dark:border-gray-800 flex flex-col p-0 z-40">
+      <aside className="w-64 min-w-[180px] max-w-xs bg-white/90 dark:bg-gray-900/80 border-r border-gray-200 dark:border-gray-800 flex flex-col p-0 z-40 transition-all duration-300">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 sticky top-0 z-10">
           <span className="font-bold text-base flex items-center gap-2"><FontAwesomeIcon icon={faComments} /> Chats</span>
           <button
@@ -578,10 +635,52 @@ export default function Home() {
               {sessions.map((s: ChatSession) => (
                 <li
                   key={s.id}
-                  className={`px-4 py-3 cursor-pointer flex flex-col gap-0.5 hover:bg-blue-50 dark:hover:bg-gray-800 transition ${s.id === currentSessionId ? 'bg-blue-100 dark:bg-gray-700 border-l-4 border-blue-500' : ''}`}
+                  className={`px-4 py-3 cursor-pointer flex flex-col gap-0.5 hover:bg-blue-50 dark:hover:bg-gray-800 transition-all duration-200 ${s.id === currentSessionId ? 'bg-blue-100 dark:bg-gray-700 border-l-4 border-blue-500 scale-[1.03] shadow-md' : ''}`}
                   onClick={() => setCurrentSessionId(s.id)}
+                  style={{ transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)' }}
                 >
-                  <span className={`font-semibold text-sm truncate ${s.id === currentSessionId ? 'text-blue-700 dark:text-blue-300' : 'text-gray-900 dark:text-gray-100'}`}>{s.title || 'Untitled Chat'}</span>
+                  <div className="flex items-center gap-2">
+                    {renamingId === s.id ? (
+                      <input
+                        className="font-semibold text-sm truncate bg-white dark:bg-gray-800 border border-blue-400 rounded px-1 py-0.5 w-32 focus:outline-none"
+                        value={renameValue}
+                        autoFocus
+                        onChange={handleRenameChange}
+                        onBlur={() => finishRenaming(s.id)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') finishRenaming(s.id);
+                          if (e.key === 'Escape') { setRenamingId(null); setRenameValue(""); }
+                        }}
+                      />
+                    ) : (
+                      <span className={`font-semibold text-sm truncate ${s.id === currentSessionId ? 'text-blue-700 dark:text-blue-300' : 'text-gray-900 dark:text-gray-100'}`}>{s.title || 'Untitled Chat'}</span>
+                    )}
+                    <button
+                      className="ml-1 text-xs text-gray-400 hover:text-blue-600"
+                      title="Rename chat"
+                      onClick={e => { e.stopPropagation(); startRenaming(s.id, s.title); }}
+                    >
+                      <FontAwesomeIcon icon={faEdit} />
+                    </button>
+                    <button
+                      className="ml-1 text-xs text-gray-400 hover:text-green-600"
+                      title="Share chat"
+                      onClick={e => { e.stopPropagation(); shareChat(s.id); }}
+                    >
+                      <FontAwesomeIcon icon={faShare} />
+                    </button>
+                    <button
+                      className="ml-1 text-xs text-gray-400 hover:text-red-600"
+                      title="Delete chat"
+                      disabled={sessions.length === 1}
+                      onClick={e => { e.stopPropagation(); deleteChat(s.id); }}
+                    >
+                      <FontAwesomeIcon icon={faTrash} />
+                    </button>
+                    {shareStatus && s.id === currentSessionId && (
+                      <span className="ml-1 text-xs text-green-500">{shareStatus}</span>
+                    )}
+                  </div>
                   <span className="text-[10px] text-gray-500 dark:text-gray-400">{new Date(s.created).toLocaleString()}</span>
                   {s.id === currentSessionId && <span className="text-[10px] text-blue-500">Current</span>}
                 </li>
@@ -608,8 +707,8 @@ export default function Home() {
 
         {/* Settings Modal */}
         {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg w-full max-w-md p-0 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-fadeIn">
+          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg w-full max-w-md p-0 overflow-hidden animate-scaleIn">
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
               <div className="flex gap-2">
                 <button className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${settingsTab === 'general' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`} onClick={() => setSettingsTab('general')}><FontAwesomeIcon icon={faLightbulb} /> General</button>
@@ -707,11 +806,20 @@ export default function Home() {
                 className={`mb-2 flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`px-3 py-2 rounded-lg max-w-[80%] text-sm ${
-                    msg.sender === "user"
+                  className={`px-3 py-2 rounded-lg max-w-[80%] text-sm transition-all duration-300 opacity-0 translate-y-4 will-change-transform
+                    ${i === lastMessageIdx ? 'animate-messageIn' : ''}
+                    ${msg.sender === "user"
                       ? "bg-blue-500 text-white"
-                      : "bg-gray-200 dark:bg-gray-700 text-black dark:text-white"
-                  }`}
+                      : "bg-gray-200 dark:bg-gray-700 text-black dark:text-white"}
+                  `}
+                  style={i === lastMessageIdx ? { animationDelay: '0.05s' } : {}}
+                  onAnimationEnd={e => {
+                    if (i === lastMessageIdx) {
+                      (e.currentTarget as HTMLDivElement).classList.remove('animate-messageIn');
+                      (e.currentTarget as HTMLDivElement).style.opacity = '1';
+                      (e.currentTarget as HTMLDivElement).style.transform = 'none';
+                    }
+                  }}
                 >
                   {msg.sender === "ai" ? (
                     <ReactMarkdown>{msg.text}</ReactMarkdown>
@@ -766,4 +874,36 @@ export default function Home() {
       </div>
     </div>
   );
+}
+
+// Add Tailwind keyframes via global style (if not already in Tailwind config)
+if (typeof window !== 'undefined') {
+  const style = document.createElement('style');
+  style.innerHTML = `
+    @keyframes messageIn {
+      0% { opacity: 0; transform: translateY(24px) scale(0.98); }
+      80% { opacity: 1; transform: translateY(-2px) scale(1.01); }
+      100% { opacity: 1; transform: none; }
+    }
+    .animate-messageIn {
+      animation: messageIn 0.35s cubic-bezier(0.4,0,0.2,1);
+      opacity: 1 !important;
+      transform: none !important;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .animate-fadeIn {
+      animation: fadeIn 0.25s cubic-bezier(0.4,0,0.2,1);
+    }
+    @keyframes scaleIn {
+      0% { opacity: 0; transform: scale(0.95); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .animate-scaleIn {
+      animation: scaleIn 0.25s cubic-bezier(0.4,0,0.2,1);
+    }
+  `;
+  document.head.appendChild(style);
 }

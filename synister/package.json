@@ -15,7 +15,10 @@
     "@fortawesome/free-regular-svg-icons": "^6.7.2",
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
     "@fortawesome/react-fontawesome": "^0.2.2",
+    "@prisma/client": "^6.9.0",
     "next": "15.3.3",
+    "next-auth": "^4.24.11",
+    "prisma": "^6.9.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0"
@@ -27,6 +30,6 @@
     "@types/react-dom": "^19",
     "@types/react-fontawesome": "^1.6.8",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "5.8.3"
   }
 }
