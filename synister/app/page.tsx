@@ -43,6 +43,15 @@ function getDefaultSession(): ChatSession {
 }
 
 export default function Home() {
+  // Helper to reset all chat sessions and global storage
+  async function resetAllSessions() {
+    await fetch("/api/storage", { method: "DELETE" });
+    const def = getDefaultSession();
+    setSessions([def]);
+    setCurrentSessionId(def.id);
+    setInput("");
+  }
+
   // --- All hooks must be called unconditionally at the top ---
   // Settings modal state
   const [showSettings, setShowSettings] = useState(false);
@@ -52,7 +61,6 @@ export default function Home() {
   const [currentSessionId, setCurrentSessionId] = useState<string>("");
   // Show loading spinner only during first mount (before useEffect runs)
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
   // Chat input and waiting state
   const [input, setInput] = useState("");
   const [waiting, setWaiting] = useState(false);
@@ -62,49 +70,81 @@ export default function Home() {
 
   // --- End of hooks ---
 
-  // Early return for loading spinner
-  if (!mounted) {
-    return (
-      <div className="flex items-center justify-center min-h-screen w-full">
-        <span className="text-gray-500 text-lg flex items-center gap-2"><FontAwesomeIcon icon={faSpinner} spin /> Loading chat…</span>
-      </div>
-    );
-  }
-
-  // On mount, load sessions from localStorage
+  // On mount, load sessions from encrypted global storage
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    (async () => {
       try {
-        const savedSessions = localStorage.getItem("synister-chat-sessions-v2");
-        if (savedSessions) {
-          const parsed: ChatSession[] = JSON.parse(savedSessions);
-          if (parsed.length > 0) {
-            setSessions(parsed);
-            setCurrentSessionId(parsed[0]?.id || "");
-          } else {
-            const def = getDefaultSession();
-            setSessions([def]);
-            setCurrentSessionId(def.id);
-          }
+        const res = await fetch("/api/storage");
+        const json = await res.json();
+        const allSessions = json.data || {};
+        const sessionArr: ChatSession[] = Object.values(allSessions);
+        if (sessionArr.length > 0) {
+          setSessions(sessionArr);
+          setCurrentSessionId(sessionArr[0]?.id || "");
         } else {
-          // If no sessions, create one
           const def = getDefaultSession();
           setSessions([def]);
           setCurrentSessionId(def.id);
         }
-      } catch (e) {
-        localStorage.removeItem("synister-chat-sessions-v2");
+      } catch {
         const def = getDefaultSession();
         setSessions([def]);
         setCurrentSessionId(def.id);
       }
-    }
+      setMounted(true);
+    })();
   }, []);
+
+  // Save sessions to encrypted global storage on change
+  useEffect(() => {
+    (async () => {
+      for (const session of sessions) {
+        await fetch("/api/storage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: session.id, data: session })
+        });
+      }
+    })();
+  }, [sessions]);
+
+  // Scroll to bottom on new message
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   // Derived state for current session
   const currentSession: ChatSession | null = sessions.length > 0
     ? sessions.find(s => s.id === currentSessionId) || sessions[0]
     : null;
+
+  // Scroll on new message
+  useEffect(() => {
+    if (currentSession) scrollToBottom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSession?.messages]);
+
+  // Always call all hooks before any early return!
+  // Early return for loading spinner
+  // Move all hooks above this point, do not add hooks below here.
+  if (!mounted) {
+    return (
+      <div className="flex items-center justify-center min-h-screen w-full">
+        <div className="text-center flex flex-col items-center gap-4">
+          <span className="text-gray-500 text-lg flex items-center gap-2"><FontAwesomeIcon icon={faSpinner} spin /> Loading chat…</span>
+          <button
+            className="text-xs px-4 py-2 rounded bg-red-500 text-white hover:bg-red-600 transition flex items-center gap-2"
+            onClick={resetAllSessions}
+            type="button"
+          >
+            <FontAwesomeIcon icon={faBroom} /> Reset All (Clear Local Storage)
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Remove duplicate declaration of currentSession
   const messages = currentSession ? currentSession.messages : [];
   const memory = currentSession ? currentSession.memory : [];
 
@@ -179,10 +219,7 @@ export default function Home() {
       localStorage.setItem("synister-chat-sessions-v2", JSON.stringify(sessions));
     }
   }, [sessions]);
-  // Scroll to bottom on new message
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  // Remove duplicate declaration of scrollToBottom
 
   // Scroll on new message
   useEffect(() => {
@@ -330,7 +367,7 @@ export default function Home() {
       )
     );
   }
-
+  // Do not place any hooks below this point!
   if (!currentSession) {
     return (
       <div className="flex items-center justify-center min-h-screen w-full">
@@ -338,13 +375,15 @@ export default function Home() {
           <div className="mb-4 text-gray-500">No chat sessions found.</div>
           <button
             className="text-xs px-4 py-2 rounded bg-green-500 text-white hover:bg-green-600 transition flex items-center gap-2"
-            onClick={() => {
-              const def = getDefaultSession();
-              setSessions([def]);
-              setCurrentSessionId(def.id);
-            }}
+            onClick={resetAllSessions}
           >
             <FontAwesomeIcon icon={faPlus} /> Start New Chat
+          </button>
+          <button
+            className="text-xs px-4 py-2 rounded bg-red-500 text-white hover:bg-red-600 transition flex items-center gap-2 mt-2"
+            onClick={resetAllSessions}
+          >
+            <FontAwesomeIcon icon={faBroom} /> Reset All (Clear Local Storage)
           </button>
         </div>
       </div>
