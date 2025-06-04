@@ -209,6 +209,7 @@ function getDefaultSession(): ChatSession {
   };
 }
 
+// Remove merge conflict markers and keep the correct implementation
 export default function Home() {
   // Helper to reset all chat sessions and global storage
   async function resetAllSessions() {
@@ -282,7 +283,7 @@ export default function Home() {
 
   // Derived state for current session
   const currentSession: ChatSession | null = sessions.length > 0
-    ? sessions.find(s => s.id === currentSessionId) || sessions[0]
+    ? sessions.find((s: ChatSession) => s.id === currentSessionId) || sessions[0]
     : null;
 
   // Scroll on new message
@@ -389,14 +390,11 @@ export default function Home() {
   // Remove duplicate declaration of scrollToBottom
 
   // Scroll on new message
-// Save sessions to localStorage on change
-useEffect(() => {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("synister-chat-sessions-v2", JSON.stringify(sessions));
-  }
-}, [sessions]);
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
-  const sendMessage = async (e: React.FormEvent) => {
+  const sendMessage = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input.trim()) return;
     const userMessage = { sender: "user", text: input };
@@ -405,7 +403,7 @@ useEffect(() => {
     // Enhanced: extract memory actions from user message
     const { add: newFacts, remove: removeFacts, update: updateFacts } = extractMemoryActions(input);
 
-    setSessions((prev) => prev.map(s => {
+    setSessions((prev: ChatSession[]) => prev.map((s: ChatSession) => {
       if (s.id !== currentSessionId) return s;
       // Update memory
       let updatedMemory = [...s.memory];
@@ -457,7 +455,7 @@ useEffect(() => {
         body: JSON.stringify({ messages: chatHistory }),
       });
       const data = await res.json();
-      setSessions((prev) => prev.map(s => {
+      setSessions((prev: ChatSession[]) => prev.map((s: ChatSession) => {
         if (s.id !== currentSessionId) return s;
         let updatedMessages = [...s.messages, { sender: "ai", text: data.reply }];
         if (updatedMessages.length > 2000) updatedMessages = updatedMessages.slice(-2000);
@@ -466,7 +464,7 @@ useEffect(() => {
         return { ...s, messages: updatedMessages, chatMessages: updatedChatMessages };
       }));
     } catch {
-      setSessions((prev) => prev.map(s => {
+      setSessions((prev: ChatSession[]) => prev.map((s: ChatSession) => {
         if (s.id !== currentSessionId) return s;
         let updatedMessages = [...s.messages, { sender: "ai", text: "Sorry, I couldn't get a response." }];
         if (updatedMessages.length > 2000) updatedMessages = updatedMessages.slice(-2000);
@@ -501,14 +499,14 @@ useEffect(() => {
   // New chat handler
   const newChat = () => {
     const newSession = getDefaultSession();
-    setSessions((prev) => [newSession, ...prev]);
+    setSessions((prev: ChatSession[]) => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
     setInput("");
   };
 
   // Reset memory handler (for current session)
   const resetMemory = () => {
-    setSessions((prev) => prev.map(s =>
+    setSessions((prev: ChatSession[]) => prev.map((s: ChatSession) =>
       s.id === currentSessionId ? { ...s, memory: [] } : s
     ));
   };
@@ -516,8 +514,8 @@ useEffect(() => {
   // Move clearHistory outside of the conditional to comply with the Rules of Hooks
   function clearHistory(event: React.MouseEvent<HTMLButtonElement, MouseEvent>): void {
     event.preventDefault();
-    setSessions(prev =>
-      prev.map(s =>
+    setSessions((prev: ChatSession[]) =>
+      prev.map((s: ChatSession) =>
         s.id === currentSessionId
           ? {
               ...s,
@@ -562,7 +560,7 @@ useEffect(() => {
     <div className="flex flex-row min-h-screen w-screen items-stretch justify-stretch bg-background p-0">
       {/* Sidebar */}
       <aside className="w-64 min-w-[180px] max-w-xs bg-white/90 dark:bg-gray-900/80 border-r border-gray-200 dark:border-gray-800 flex flex-col p-0 z-40">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 sticky top-0 z-10">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 sticky top-0 z-10">
           <span className="font-bold text-base flex items-center gap-2"><FontAwesomeIcon icon={faComments} /> Chats</span>
           <button
             className="text-xs px-2 py-1 rounded bg-green-500 text-white hover:bg-green-600 transition shadow flex items-center gap-1"
@@ -577,7 +575,7 @@ useEffect(() => {
             <div className="text-xs text-gray-400 p-4">No chats yet.</div>
           ) : (
             <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-              {sessions.map((s) => (
+              {sessions.map((s: ChatSession) => (
                 <li
                   key={s.id}
                   className={`px-4 py-3 cursor-pointer flex flex-col gap-0.5 hover:bg-blue-50 dark:hover:bg-gray-800 transition ${s.id === currentSessionId ? 'bg-blue-100 dark:bg-gray-700 border-l-4 border-blue-500' : ''}`}
@@ -729,7 +727,7 @@ useEffect(() => {
             <textarea
               className="flex-1 rounded border px-3 py-2 text-sm bg-white dark:bg-black/60 border-gray-300 dark:border-gray-600 focus:outline-none resize-y min-h-[2.5em] max-h-40"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
               placeholder={
                 waiting
                   ? "Waiting for AI response…"
@@ -739,7 +737,7 @@ useEffect(() => {
               }
               autoFocus
               disabled={waiting}
-              onKeyDown={(e) => {
+              onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   if (input.trim()) {
