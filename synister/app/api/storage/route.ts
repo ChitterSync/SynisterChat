@@ -2,6 +2,8 @@ import { setItem, getItem, getAll, clear } from "./secureStore";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]/route";
 
+export const runtime = 'edge';
+
 // POST /api/storage - Save session data (authenticated)
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
