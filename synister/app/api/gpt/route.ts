@@ -44,7 +44,7 @@ export async function POST(request: Request): Promise<Response> {
           "Authorization": `Bearer ${githubToken}`
         },
         body: JSON.stringify({
-          model: "openai/gpt-4.1",
+          model: "openai/gpt-4.1-nano", // Updated to the correct model name per GitHub AI docs
           messages,
           temperature: 1.0,
           top_p: 1.0

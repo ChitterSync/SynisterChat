@@ -68,6 +68,7 @@ Powerful AI environment using multiple models.
   - Claude (Opus, Sonnet)
   - Gemini
   - LLaMA
+  - Grok 3
   - Gwen (external)
   - Starlight (native)
 - Image generation:
@@ -1072,7 +1073,7 @@ function HomeContent(): React.ReactElement {
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </ClientSessionProvider>
   );
